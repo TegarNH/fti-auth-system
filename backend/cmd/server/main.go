@@ -59,6 +59,7 @@ func main() {
 	}
 
 	authHandler := handlers.NewAuthHandler(authService, cfg.CookieSecure)
+	adminHandler := handlers.NewAdminHandler(authService)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -99,6 +100,14 @@ func main() {
 	r.Route("/api/me", func(r chi.Router) {
 		r.Use(appMiddleware.RequireAuth(authService))
 		r.Get("/", authHandler.Me)
+	})
+
+	// Admin-only endpoints
+	r.Route("/api/admin", func(r chi.Router) {
+		r.Use(appMiddleware.RequireAuth(authService))
+		r.Use(appMiddleware.RequireAdmin)
+		r.Get("/users", adminHandler.ListUsers)
+		r.Post("/users/{id}/force-logout", adminHandler.ForceLogout)
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

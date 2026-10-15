@@ -13,6 +13,7 @@ var (
 	ErrUnauthorized       = errors.New("sesi tidak valid atau telah berakhir")
 	ErrAccountInactive    = errors.New("akun dinonaktifkan")
 	ErrValidation         = errors.New("validasi input gagal")
+	ErrNotFound           = errors.New("user tidak ditemukan")
 )
 
 type User struct {
