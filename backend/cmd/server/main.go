@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"github.com/TegarNH/fti-auth-system/backend/internal/auth"
 	"github.com/TegarNH/fti-auth-system/backend/internal/config"
 	"github.com/TegarNH/fti-auth-system/backend/internal/db"
+	"github.com/TegarNH/fti-auth-system/backend/internal/handlers"
+	appMiddleware "github.com/TegarNH/fti-auth-system/backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -52,12 +53,21 @@ func main() {
 		log.Fatalf("Failed to seed initial admin user: %v", err)
 	}
 
+	authService, err := auth.NewService(pool, argonParams, cfg.SessionTTLHours, cfg.MaxActiveSessions)
+	if err != nil {
+		log.Fatalf("Failed to initialize auth service: %v", err)
+	}
+
+	authHandler := handlers.NewAuthHandler(authService, cfg.CookieSecure)
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(appMiddleware.CORS(cfg.FrontendOrigin))
 
+	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		dbStatus := "ok"
 		pingCtx, pingCancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -67,12 +77,28 @@ func main() {
 			dbStatus = "error"
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(healthResponse{
+		handlers.WriteJSON(w, http.StatusOK, healthResponse{
 			Status:   "ok",
 			Database: dbStatus,
 		})
+	})
+
+	// Public auth endpoints
+	r.Route("/api/auth", func(r chi.Router) {
+		r.Post("/register", authHandler.Register)
+		r.Post("/login", authHandler.Login)
+
+		// Protected auth endpoints
+		r.Group(func(r chi.Router) {
+			r.Use(appMiddleware.RequireAuth(authService))
+			r.Post("/logout", authHandler.Logout)
+		})
+	})
+
+	// Protected user endpoints
+	r.Route("/api/me", func(r chi.Router) {
+		r.Use(appMiddleware.RequireAuth(authService))
+		r.Get("/", authHandler.Me)
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
