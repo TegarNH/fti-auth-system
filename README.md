@@ -8,7 +8,7 @@ Proyek ini merupakan bagian dari asesmen Fullstack Developer. Saya mengutamakan 
 
 ## Fitur
 
-### Yang Diminta (Kebutuhan Minimum)
+### Kebutuhan Minimum
 
 - **Register & Login** — daftar dengan email, username, dan password; masuk bisa pakai email *atau* username lewat satu kolom identifier.
 - **Profil Terautentikasi** — `GET /api/me` hanya bisa diakses dengan sesi aktif dan selalu mengembalikan data pemilik sesi itu sendiri.
