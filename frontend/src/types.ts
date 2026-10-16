@@ -12,6 +12,16 @@ export interface UserWithSessions extends User {
   active_sessions: number
 }
 
+export interface UserSession {
+  id: string
+  user_agent: string
+  ip_address?: string
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  is_current: boolean
+}
+
 export interface ApiError {
   error?: string
   message?: string

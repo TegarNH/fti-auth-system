@@ -351,3 +351,68 @@ func (s *Service) Logout(ctx context.Context, sessionID string) error {
 	}
 	return nil
 }
+
+// ListActiveSessions returns all currently active sessions for a user, marking the current session.
+func (s *Service) ListActiveSessions(ctx context.Context, userID, currentSessionID string) ([]SessionView, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, user_agent, host(ip_address), created_at, last_seen_at, expires_at
+		FROM sessions
+		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+		ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("querying user active sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []SessionView
+	for rows.Next() {
+		var sess SessionView
+		var ip sql.NullString
+		err := rows.Scan(
+			&sess.ID,
+			&sess.UserAgent,
+			&ip,
+			&sess.CreatedAt,
+			&sess.LastSeenAt,
+			&sess.ExpiresAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning session row: %w", err)
+		}
+		if ip.Valid && ip.String != "" {
+			sess.IPAddress = &ip.String
+		}
+		sess.IsCurrent = (sess.ID == currentSessionID)
+		sessions = append(sessions, sess)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating session rows: %w", err)
+	}
+
+	if sessions == nil {
+		sessions = []SessionView{}
+	}
+
+	return sessions, nil
+}
+
+// RevokeUserSession revokes an active session owned by the specified user.
+func (s *Service) RevokeUserSession(ctx context.Context, userID, targetSessionID string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE sessions
+		SET revoked_at = now(), revoked_reason = 'user_revoked'
+		WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+	`, targetSessionID, userID)
+	if err != nil {
+		return fmt.Errorf("revoking user session: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+

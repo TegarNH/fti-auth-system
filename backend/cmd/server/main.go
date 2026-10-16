@@ -100,6 +100,8 @@ func main() {
 	r.Route("/api/me", func(r chi.Router) {
 		r.Use(appMiddleware.RequireAuth(authService))
 		r.Get("/", authHandler.Me)
+		r.Get("/sessions", authHandler.ListSessions)
+		r.Delete("/sessions/{id}", authHandler.RevokeSession)
 	})
 
 	// Admin-only endpoints

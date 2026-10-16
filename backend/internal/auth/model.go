@@ -40,6 +40,16 @@ type Session struct {
 	RevokedReason *string    `json:"revoked_reason,omitempty"`
 }
 
+type SessionView struct {
+	ID         string    `json:"id"`
+	UserAgent  string    `json:"user_agent"`
+	IPAddress  *string   `json:"ip_address,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	IsCurrent  bool      `json:"is_current"`
+}
+
 type UserView struct {
 	ID       string `json:"id"`
 	Email    string `json:"email"`

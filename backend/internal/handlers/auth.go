@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/TegarNH/fti-auth-system/backend/internal/auth"
+	"github.com/go-chi/chi/v5"
 )
 
 type AuthHandler struct {
@@ -143,3 +144,75 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		User: user.ToView(),
 	})
 }
+
+// ListSessions returns all active sessions for the authenticated user.
+func (h *AuthHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok || user == nil {
+		WriteError(w, http.StatusUnauthorized, "sesi tidak valid atau telah berakhir")
+		return
+	}
+
+	currentSession, _ := auth.SessionFromContext(r.Context())
+	var currentSessionID string
+	if currentSession != nil {
+		currentSessionID = currentSession.ID
+	}
+
+	sessions, err := h.service.ListActiveSessions(r.Context(), user.ID, currentSessionID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "gagal mengambil daftar sesi")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, struct {
+		Sessions []auth.SessionView `json:"sessions"`
+	}{
+		Sessions: sessions,
+	})
+}
+
+// RevokeSession revokes a specific session belonging to the authenticated user.
+func (h *AuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok || user == nil {
+		WriteError(w, http.StatusUnauthorized, "sesi tidak valid atau telah berakhir")
+		return
+	}
+
+	targetSessionID := chi.URLParam(r, "id")
+	if targetSessionID == "" {
+		WriteError(w, http.StatusBadRequest, "ID sesi tidak valid")
+		return
+	}
+
+	currentSession, _ := auth.SessionFromContext(r.Context())
+
+	if err := h.service.RevokeUserSession(r.Context(), user.ID, targetSessionID); err != nil {
+		if errors.Is(err, auth.ErrNotFound) {
+			WriteError(w, http.StatusNotFound, "sesi tidak ditemukan atau sudah tidak aktif")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, "gagal mencabut sesi")
+		return
+	}
+
+	// If the user revoked their currently active session, clear the auth cookie
+	if currentSession != nil && currentSession.ID == targetSessionID {
+		http.SetCookie(w, &http.Cookie{
+			Name:     auth.SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			Expires:  time.Unix(0, 0),
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   h.cookieSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, MessageResponse{
+		Message: "sesi berhasil dicabut",
+	})
+}
+

@@ -235,3 +235,69 @@ func TestRequireAdmin_RejectNonAdmin(t *testing.T) {
 func isNotFound(err error) bool {
 	return errors.Is(err, auth.ErrNotFound)
 }
+
+// Test 6: User can list own active sessions and revoke a specific session.
+func TestUserSessions_ListAndRevokeOwn(t *testing.T) {
+	pool := testDB(t)
+	svc := newService(t, pool)
+
+	email := fmt.Sprintf("sessions-%d@test.local", time.Now().UnixNano())
+	registerUser(t, svc, email, fmt.Sprintf("u_sess_%d", time.Now().UnixNano()%100000000), "Pass1234!")
+
+	tok1 := loginUser(t, svc, email, "Pass1234!")
+	tok2 := loginUser(t, svc, email, "Pass1234!")
+
+	user, sess2, err := svc.Authenticate(context.Background(), tok2)
+	if err != nil {
+		t.Fatalf("authenticate tok2: %v", err)
+	}
+
+	// List active sessions
+	sessions, err := svc.ListActiveSessions(context.Background(), user.ID, sess2.ID)
+	if err != nil {
+		t.Fatalf("list active sessions: %v", err)
+	}
+
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 active sessions, got %d", len(sessions))
+	}
+
+	// Verify is_current flag
+	var currentFound bool
+	var otherSessionID string
+	for _, s := range sessions {
+		if s.IsCurrent {
+			currentFound = true
+			if s.ID != sess2.ID {
+				t.Errorf("expected current session ID %s, got %s", sess2.ID, s.ID)
+			}
+		} else {
+			otherSessionID = s.ID
+		}
+	}
+	if !currentFound {
+		t.Error("expected one session to have IsCurrent=true")
+	}
+
+	// Revoke the other session (tok1)
+	if err := svc.RevokeUserSession(context.Background(), user.ID, otherSessionID); err != nil {
+		t.Fatalf("revoke user session: %v", err)
+	}
+
+	// Verify tok1 is no longer active
+	if tokenIsActive(svc, tok1) {
+		t.Error("expected tok1 to be revoked, but it is still active")
+	}
+
+	// Verify tok2 remains active
+	if !tokenIsActive(svc, tok2) {
+		t.Error("expected tok2 to remain active")
+	}
+
+	// Verify cannot revoke another user's session or non-existent session
+	err = svc.RevokeUserSession(context.Background(), "00000000-0000-0000-0000-000000000000", sess2.ID)
+	if !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("expected ErrNotFound when revoking with wrong user ID, got %v", err)
+	}
+}
+
